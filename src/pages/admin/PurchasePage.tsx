@@ -11,8 +11,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ShoppingCart, Plus, Trash2, Send, History, Pencil } from "lucide-react";
+import { ShoppingCart, Plus, Trash2, Send, History, Pencil, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 
 interface Product {
   id: string;
@@ -55,13 +56,22 @@ interface StockHistory {
   product_name: string;
 }
 
+const generatePurchaseNumber = () => {
+  return String(Math.floor(1000 + Math.random() * 9000));
+};
+
 const PurchasePage = () => {
   const { toast } = useToast();
+  const { profile } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [localGodowns, setLocalGodowns] = useState<Godown[]>([]);
   const [selectedGodownIds, setSelectedGodownIds] = useState<string[]>([]);
   const [items, setItems] = useState<PurchaseItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
+
+  // Bill info
+  const [purchaseNumber, setPurchaseNumber] = useState(generatePurchaseNumber());
+  const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split("T")[0]);
 
   // History state
   const [history, setHistory] = useState<StockHistory[]>([]);
@@ -177,9 +187,11 @@ const PurchasePage = () => {
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
-      toast({ title: `Stock added to ${selectedGodownIds.length} godown(s) — ${validItems.length} product(s)` });
+      toast({ title: `Purchase #${purchaseNumber} — Stock added to ${selectedGodownIds.length} godown(s), ${validItems.length} product(s)` });
       setItems([]);
       setSelectedGodownIds([]);
+      setPurchaseNumber(generatePurchaseNumber());
+      setPurchaseDate(new Date().toISOString().split("T")[0]);
       if (mrpUpdates.length > 0) {
         const { data } = await supabase.from("products").select("id, name, price, category, purchase_rate, mrp, discount_rate").eq("is_active", true).order("name");
         if (data) setProducts(data as Product[]);
@@ -282,10 +294,33 @@ const PurchasePage = () => {
           </TabsList>
 
           <TabsContent value="purchase" className="space-y-6 mt-4">
+            {/* Purchase Bill Info */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2"><FileText className="h-4 w-4" /> Purchase Bill</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <Label className="text-xs">Purchase No.</Label>
+                    <Input value={purchaseNumber} onChange={e => setPurchaseNumber(e.target.value)} maxLength={4} placeholder="4-digit number" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Date</Label>
+                    <Input type="date" value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Admin</Label>
+                    <Input value={profile?.full_name || profile?.email || "—"} disabled className="bg-muted" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Select Godowns */}
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">1. Select Local Godowns</CardTitle>
+                <CardTitle className="text-base">2. Select Local Godowns</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="flex items-center gap-2 mb-3">
@@ -324,7 +359,7 @@ const PurchasePage = () => {
             <Card>
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">2. Add Products</CardTitle>
+                  <CardTitle className="text-base">3. Add Products</CardTitle>
                   <Button size="sm" onClick={addItem}>
                     <Plus className="mr-1 h-3 w-3" /> Add Product
                   </Button>
