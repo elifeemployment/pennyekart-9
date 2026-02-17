@@ -31,7 +31,7 @@ const SearchBar = () => {
   ];
 
   return (
-    <div className="border-b bg-card">
+    <div className="relative z-[60] border-b bg-card">
       <div className="container flex items-center gap-3 py-2.5">
         {/* Search */}
         <div className="relative flex-1">
