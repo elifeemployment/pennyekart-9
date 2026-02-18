@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import ProductRow from "@/components/ProductRow";
 import { useCart } from "@/hooks/useCart";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 
 interface ProductData {
   id: string;
@@ -38,6 +39,8 @@ const ProductDetail = () => {
   const [showVideo, setShowVideo] = useState(false);
   const { addItem } = useCart();
   const { toast } = useToast();
+  const { profile } = useAuth();
+  const [availableStock, setAvailableStock] = useState<number | null>(null);
 
   const handleAddToCart = () => {
     if (!product) return;
@@ -67,6 +70,51 @@ const ProductDetail = () => {
     ? [product.image_url, product.image_url_2, product.image_url_3].filter(Boolean) as string[]
     : [];
 
+  // Fetch godown stock for user's area
+  useEffect(() => {
+    const fetchGodownStock = async () => {
+      if (!product || !profile?.local_body_id || !profile?.ward_number) {
+        setAvailableStock(product?.stock ?? 0);
+        return;
+      }
+
+      // Get micro godown IDs
+      const { data: microWards } = await supabase
+        .from("godown_wards")
+        .select("godown_id, godowns!inner(godown_type)")
+        .eq("local_body_id", profile.local_body_id)
+        .eq("ward_number", profile.ward_number)
+        .eq("godowns.godown_type", "micro");
+
+      // Get area godown IDs
+      const { data: areaLocalBodies } = await supabase
+        .from("godown_local_bodies")
+        .select("godown_id, godowns!inner(godown_type)")
+        .eq("local_body_id", profile.local_body_id)
+        .eq("godowns.godown_type", "area");
+
+      const godownIds = new Set<string>();
+      microWards?.forEach(r => godownIds.add(r.godown_id));
+      areaLocalBodies?.forEach(r => godownIds.add(r.godown_id));
+
+      if (godownIds.size === 0) {
+        setAvailableStock(product.stock);
+        return;
+      }
+
+      const { data: stockData } = await supabase
+        .from("godown_stock")
+        .select("quantity")
+        .eq("product_id", product.id)
+        .in("godown_id", Array.from(godownIds));
+
+      const totalGodownStock = stockData?.reduce((sum, s) => sum + s.quantity, 0) ?? 0;
+      setAvailableStock(totalGodownStock > 0 ? totalGodownStock : product.stock);
+    };
+
+    fetchGodownStock();
+  }, [product, profile?.local_body_id, profile?.ward_number]);
+
   useEffect(() => {
     const fetchProduct = async () => {
       if (!id) return;
@@ -75,11 +123,10 @@ const ProductDetail = () => {
         .select("id, name, price, mrp, discount_rate, description, image_url, image_url_2, image_url_3, video_url, category, stock")
         .eq("id", id)
         .eq("is_active", true)
-        .single();
+        .maybeSingle();
 
       if (data) {
         setProduct(data as ProductData);
-        // Fetch similar products (same category)
         if (data.category) {
           const { data: similar } = await supabase
             .from("products")
@@ -115,6 +162,8 @@ const ProductDetail = () => {
       </div>
     );
   }
+
+  const effectiveStock = availableStock ?? product.stock;
 
   const discountPercent = product.mrp > product.price
     ? Math.round(((product.mrp - product.price) / product.mrp) * 100)
@@ -213,7 +262,7 @@ const ProductDetail = () => {
               )}
             </div>
 
-            {product.stock <= 0 && (
+            {effectiveStock <= 0 && (
               <p className="mt-2 text-sm font-medium text-destructive">Out of stock</p>
             )}
 
@@ -238,10 +287,10 @@ const ProductDetail = () => {
 
             {/* Sticky Add to Cart (desktop) */}
             <div className="mt-6 hidden gap-3 md:flex">
-              <Button variant="outline" className="flex-1" disabled={product.stock <= 0} onClick={handleAddToCart}>
+              <Button variant="outline" className="flex-1" disabled={effectiveStock <= 0} onClick={handleAddToCart}>
                 Add to cart
               </Button>
-              <Button className="flex-1" disabled={product.stock <= 0} onClick={handleBuyNow}>
+              <Button className="flex-1" disabled={effectiveStock <= 0} onClick={handleBuyNow}>
                 Buy at ₹{product.price}
               </Button>
             </div>
@@ -258,10 +307,10 @@ const ProductDetail = () => {
 
       {/* Mobile sticky bottom bar */}
       <div className="fixed bottom-0 left-0 right-0 z-30 flex gap-2 border-t border-border bg-background p-3 md:hidden">
-        <Button variant="outline" className="flex-1" disabled={product.stock <= 0} onClick={handleAddToCart}>
+        <Button variant="outline" className="flex-1" disabled={effectiveStock <= 0} onClick={handleAddToCart}>
           Add to cart
         </Button>
-        <Button className="flex-1" disabled={product.stock <= 0} onClick={handleBuyNow}>
+        <Button className="flex-1" disabled={effectiveStock <= 0} onClick={handleBuyNow}>
           Buy at ₹{product.price}
         </Button>
       </div>
